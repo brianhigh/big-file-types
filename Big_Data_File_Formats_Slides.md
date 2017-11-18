@@ -21,7 +21,7 @@ With a case study, we will show how we managed Big Data Volume in R.
 ## Case Study: Meteorological Data
 
 We are using climate data from the 
-[MACA downscaling](https://climate.northwestknowledge.net/MACA/) model. 
+[MACA downscaling](https://climate.northwestknowledge.net/MACA/) datasets. 
 
 * 20 models
 * 150 years per model
@@ -134,15 +134,14 @@ Both will perform similarly in terms of speed, with XDF taking less storage
 space but more time to read into memory. If the operations to be performed 
 will consume too much memory, then MonetDBLite will also allow some of the 
 calculations to be performed in SQL before loading the entire dataset into 
-memory. Or, either file type can be subset during import to implement a 
+memory. Or, either file type can be subsetted during import to implement a 
 "chunking" approach. So, if minimizing storage consumption is a priority, then 
-we may prefer XDF, but if execution time or memory conservations are priorities, 
+we may prefer XDF, but if execution time and memory conservation are priorities, 
 then we may prefer MonetDBLite.
 
 It is quicker to import our data into a `data.frame` rather than converting to 
 _data.table_ during or after import. But using the _data.table_ bracket-notation
 for some operations will be faster than performing those same operations with 
- _dplyr_ functions. So, if we have lots of operations to perform in memory, it 
- may be worth the overhead of converting data frame's to data tables in order 
- to use the _data.table_ package.
- 
+_dplyr_ functions. So, if we have lots of operations to perform in memory, it 
+may be worth the overhead of converting data frame's to data tables in order 
+to use the _data.table_ package.

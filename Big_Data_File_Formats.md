@@ -11,12 +11,13 @@ November 17, 2017
 This is a brief introduction to the management of "Big Data" in R using 
 file-based databases to work around limitations in volatile memory (RAM).
 
-Storage, either on disk or the network, is usually much cheaper than RAM, but
-also much slower. If the size of your data set exceeds your available RAM, 
-it might be worth using file-based solutions. They will often be easier to 
-implement than database servers, computing clusters, or cloud options. They 
-will allow you to scale up to datasets about twice as big as the amount of 
-RAM you have available.
+Storage, either on disk or the network, is usually much cheaper than RAM, 
+but also much slower to access. If the size of your data set exceeds your 
+available RAM, it might be worth using file-based solutions. They will 
+often be easier to implement than database servers, computing clusters, or 
+cloud options. They will allow you to work with datasets about twice as 
+big as the amount of RAM you have available. You can work with even bigger 
+datasets if you can work with only a subset or sample of the full dataset.
 
 ### File Formats
 
@@ -36,7 +37,8 @@ R session, so we abandoned that format for this study. We compared with CSV and
 GZipped CSV, as those are familiar formats that we suspected would perform 
 poorly, but we wanted to see for ourselves. Likewise, RData is a familiar 
 format for R users, as it is the native R format for saving workspace data 
-objects.
+objects. Like XDF, RData stores R objects and allows for compression. Unlike 
+XDF, support for RData is found in all versions of R.
 
 ### Packages
 
@@ -55,18 +57,20 @@ We will also be using these R packages:
 
 We will be working with an ongoing research project using meteorological data 
 as an example case study. In particular, we will use climate data from the 
-[MACA downscaling](https://climate.northwestknowledge.net/MACA/) model. Our 
+[MACA downscaling](https://climate.northwestknowledge.net/MACA/) datasets. Our 
 goal is to find which file types will be the most efficient for working with 
 data from this source, when merged into datasets containing about two billion 
 rows each. This size represents 150 years of daily observations and projects 
-for geographic grid locations in Washington State for one model. 
+for geographic grid locations in Washington State for one climate model. 
 
 We will look at 20 models, so a total of about 40 billion rows of data. If 
 stored as plain text CSV files, this would consume almost 3 terabytes (TB) of 
 disk space. If imported into R, this would use more than 1.5 TB of memory. 
 Fortunately, we only need to work with one model at a time. Even so, we would
 still consider this "Big Data", as we would need at least 180 GB of memory to 
-store one model's data in memory and perform basic statistical operations on it.
+store one model's data in memory and perform basic statistical operations on 
+it. Most computer systems, aside from large servers, do not have this much 
+memory.
 
 ## Big Data
 
@@ -78,10 +82,10 @@ This will be our working definition of "Big Data":
 > Big Data means data of such volume, velocity, or variety such that the use of 
 > special tools and techniques will be necessary in order to manage it effectively.
 
-For this project, we will focus on Big Data _volume_. And how much volume is 
+For this project, we will focus on Big Data _volume_. So how much volume is 
 "Big"? While some consider "Big Data" to mean terabytes (TB) or petabytes (PB) 
 of data, that is simply what is big relative to their experience and resources. 
-So, what is big for R users?
+What is big for R users?
 
 Many statistical software programs, R included, load working datasets into 
 volatile memory (RAM). When you import a CSV file into a data frame, that data
@@ -164,7 +168,7 @@ locations (lat/lon pairs) are represented in the data files for this region.
 We will describe the process of elucidating and analyzing our requirements in 
 these areas:
 
-* Access Requirements
+* Access/Security Requirements
 * Software Requirements
 * Storage Requirements
 * Memory Requirements
@@ -186,14 +190,14 @@ are not sensitive, so no special security precautions will be need be taken.
 We are choosing to use R for data management and analysis, based on previous 
 familiarity and experience. We can use it at no financial cost and it can run 
 on the various operating systems we already use in our department. We have a 
-reasonable expectation that it will be able to handle our project, based on 
+reasonable expectation that R will be able to handle our project, based on 
 previous experience and the reports of others.
 
 ### Storage Requirements
 
 Initially, we downloaded 2000 [NetCDF](http://www.unidata.ucar.edu/software/netcdf/docs/faq.html) 
 files, covering 20 models, three "scenarios", and two "variables" (with three 
-"dimensions"). As NetCDF file consumed about 145 MB of storage space on 
+"dimensions"). As each NetCDF file consumed about 145 MB of storage space on 
 average, the 2000 files consumed a total of about 283 GB.
 
 If we would only need to work with a few NetCDF files at a time, then this might
@@ -215,15 +219,21 @@ require a total of about 800 GB. Considering we might need some additional
 scratch space, we allocated 1 TB for this project's network storage folder.
 
 We will compare the performance of a variety of file types: GZipped CSV, 
-MonetDBLite, SQLite, and XDF. So, we will need to store these other types, as 
-least at long as it takes to test them. For our 20 merged datasets, we have 
+MonetDBLite, SQLite, XDF, and RData. So, we will need to store these other types, 
+as least at long as it takes to test them. For our 20 merged datasets, we have 
 found space consumption to be, per dataset: CSV = 146 GB, GZipped CSV = 26 GB, 
-MonetDBLite = 73 GB, SQLite = 109 GB, XDF = 11 GB. As we have found the 
-performance of CSV, GZipped CSV, and SQLite to be poor for our datasets, we
-decided to only store a complete set of MonetDBLite (1,460 GB) and XDF (220 GB) 
-files. Since the MonetDBLite files grow as they are used, we allowed for this
-by putting just those files on a 1.77 TB drive. We will still have to remove 
-completed models as we evaluate each new model, to allow for file expansion.
+MonetDBLite = 73 GB, SQLite = 109 GB, XDF = 11 GB, RData = 96 GB. 
+
+Since the uncompressed RData format takes so much more space than XDF, but 
+offers no additional benefits, and lacks "on-disk" query features or any other 
+memory-saving or performance enhacing features, and suffers from poor storage 
+and retrival times when using compression, we chose not to store a complete set 
+of RData files. Likewise, we also found the performance of CSV, GZipped CSV, 
+and SQLite to be poor for our datasets. Therefore, we decided to only store a 
+complete set of MonetDBLite (1,460 GB) and XDF (220 GB) files. Since the 
+MonetDBLite files grow as they are used, we allowed for this by putting just 
+those files on a 1.77 TB drive. We will still have to remove completed models as 
+we evaluate each new model, to allow for file expansion.
 
 ### Memory Requirements
 
@@ -295,7 +305,7 @@ _dplyr_ and _RevoScaleR_ to speed execution.
 
 Fortunately we have access to a server with 512 GB of RAM and 32 CPU cores. It 
 also has an additional 2 TB of local storage available for temporary use. It 
-runs Windows Server 2008 R2, 64 Bit. We will use up to 1.5 TB of the local 
+runs Windows Server 2008 R2, 64 bit. We will use up to 1.5 TB of the local 
 storage and will try to keep our memory consumption to no more than 256 GB. 
 Most of the time, will only be using a few CPU cores, so load on the system 
 should not be significant. By using local storage, we will reduce load on the
@@ -304,8 +314,8 @@ network.
 ## File Comparison Test Results
 
 For this project we were not too concerned about the time it takes to write the
-files since would be automating this as a batch and would only need to write 
-them once.
+files since we would be automating this as a batch and would only need to write 
+the merged files once.
 
 What was of more concern was the amount of space the files would take, how long
 it would take to query them "on disk" and how long it would take to read entire 
@@ -329,8 +339,39 @@ This is because that file format will reindex itself according to your queries.
 
 ## On-Disk Queries
 
-MonetDBLite was much faster than SQL. XDF was fast too, but it's query features 
-are more limited compared to the expressiveness of SQL.
+### Benchmark Operation
+
+Our benchmark query was a simple filter/group/summarize operation expressed 
+in SQL as:
+
+    SELECT scenario, 
+           MAX(tasmax) AS maxtmax, 
+           MIN(tasmin) AS mintmin  
+    FROM metdata 
+    WHERE NOT tasmax = 0 AND NOT tasmin = 0 
+    GROUP BY scenario;
+
+This is equivalent to this _dplyr_ pipeline:
+
+    df %>% filter(tasmax != 0, tasmin != 0) %>% 
+           group_by(scenario) %>% 
+           summarise(maxtmax=max(tasmax, na.rm = TRUE), 
+                     mintmin=min(tasmin, na.rm = TRUE))
+
+Or this _data.table_ operation:
+
+    dt[tasmax != 0 & tasmin != 0, 
+       .(maxtmax=max(tasmax, na.rm = TRUE), 
+         mintmin=min(tasmin, na.rm = TRUE)), 
+       by = list(scenario)]
+
+Where `maxtmax` is the maximum of the daily maximum temperatures and 
+`mintmin` is the minimum of the daily minimum temperatures.
+
+### Query Performance
+
+MonetDBLite was much faster to query than SQL. XDF was fast too, but it's 
+query features are more limited compared to the rich expressiveness of SQL.
 
 
 
@@ -338,7 +379,7 @@ are more limited compared to the expressiveness of SQL.
 
 ## File Import Times
 
-MonetDBLite was the fastes to import bay far. SQLite and GZipped CSV took much 
+MonetDBLite was the fastest to import by far. SQLite and GZipped CSV took much 
 to long to read to be considered competitive with the others.
 
 
@@ -347,9 +388,10 @@ to long to read to be considered competitive with the others.
 
 ## "In-Memory" Calculation Time
 
-_data.table_ is faster than _dplyr_. Making sure factors are coded as factors 
-instead of characters can really help, especially when using _dplyr_. Specify 
-column types as you import, as it will take a long time to convert after import.
+_data.table_ is faster than _dplyr_ for our benchmark summary operation. Making 
+sure factors are coded as factors instead of characters can really help, especially 
+when using _dplyr_. Specify column types as you import, as it will take a long 
+time to convert after import.
 
 
 
@@ -357,7 +399,9 @@ column types as you import, as it will take a long time to convert after import.
 
 ## Max and Min Temperatures
 
-It takes about 3 hours and 12 minutes to summarize all of the data:
+It takes about 3 hours and 12 minutes to summarize all of the data. Since all
+models duplicate the historical data, it would make sense to store only one 
+copy of this separately.
 
 
 
@@ -373,9 +417,9 @@ Both will perform similarly in terms of speed, with XDF taking less storage
 space but more time to read into memory. If the operations to be performed 
 will consume too much memory, then MonetDBLite will also allow some of the 
 calculations to be performed in SQL before loading the entire dataset into 
-memory. Or, either file type can be subset during import to implement a 
+memory. Or, either file type can be subsetted during import to implement a 
 "chunking" approach. So, if minimizing storage consumption is a priority, then 
-we may prefer XDF, but if execution time or memory conservations are priorities, 
+we may prefer XDF, but if execution time and memory conservation are priorities, 
 then we may prefer MonetDBLite.
 
 It is quicker to import our data into a `data.frame` rather than converting to 

@@ -272,7 +272,8 @@ As stored in RAM:       (2*10^9)*(8+8+8+8+8+8)/1024^3 =  90 GB</code></pre>
 FROM metdata 
 WHERE NOT tasmax = 0 AND NOT tasmin = 0 
 GROUP BY scenario;</code></pre>
-<p>This is equivalent to this <em>dplyr</em> pipeline:</p>
+<p>Where <code>maxtmax</code> is the maximum of the daily maximum temperatures and <code>mintmin</code> is the minimum of the daily minimum temperatures.</p>
+<p>This query is equivalent to this <em>dplyr</em> pipeline:</p>
 <pre><code>df %&gt;% filter(tasmax != 0, tasmin != 0) %&gt;% 
        group_by(scenario) %&gt;% 
        summarise(maxtmax=max(tasmax, na.rm = TRUE), 
@@ -282,7 +283,16 @@ GROUP BY scenario;</code></pre>
    .(maxtmax=max(tasmax, na.rm = TRUE), 
      mintmin=min(tasmin, na.rm = TRUE)), 
    by = list(scenario)]</code></pre>
-<p>Where <code>maxtmax</code> is the maximum of the daily maximum temperatures and <code>mintmin</code> is the minimum of the daily minimum temperatures.</p>
+<p>With XDF, we can use the <em>rxSummary</em> function:</p>
+<pre><code>rxSummary(~tasmax:scenario + tasmin:scenario, 
+          data=xdf.dso, removeZeroCounts = TRUE, 
+          summaryStats=c(&quot;Max&quot;, &quot;Min&quot;))</code></pre>
+<p>But to get the output formatted as in the previous examples, we use <em>dplyr</em> to reformat it:</p>
+<pre><code>df.rxs$categorical[[1]][c('scenario', 'Max')] %&gt;% 
+    full_join(df.rxs$categorical[[2]][c(&quot;scenario&quot;, 'Min')],
+              by = 'scenario') %&gt;% 
+    rename(maxtmax=Max, mintmin=Min) %&gt;% mutate(model=mod)</code></pre>
+<p>Where <code>df.rxs</code> is the <code>data.frame</code> object we used to store the output of <em>rxSummary</em>.</p>
 </div>
 <div id="query-performance" class="section level3">
 <h3>Query Performance</h3>

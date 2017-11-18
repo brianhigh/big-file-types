@@ -380,7 +380,10 @@ in SQL as:
     WHERE NOT tasmax = 0 AND NOT tasmin = 0 
     GROUP BY scenario;
 
-This is equivalent to this _dplyr_ pipeline:
+Where `maxtmax` is the maximum of the daily maximum temperatures and 
+`mintmin` is the minimum of the daily minimum temperatures.
+
+This query is equivalent to this _dplyr_ pipeline:
 
     df %>% filter(tasmax != 0, tasmin != 0) %>% 
            group_by(scenario) %>% 
@@ -394,8 +397,22 @@ Or this _data.table_ operation:
          mintmin=min(tasmin, na.rm = TRUE)), 
        by = list(scenario)]
 
-Where `maxtmax` is the maximum of the daily maximum temperatures and 
-`mintmin` is the minimum of the daily minimum temperatures.
+With XDF, we can use the _rxSummary_ function: 
+
+    rxSummary(~tasmax:scenario + tasmin:scenario, 
+              data=xdf.dso, removeZeroCounts = TRUE, 
+              summaryStats=c("Max", "Min"))
+
+But to get the output formatted as in the previous examples, we use _dplyr_ 
+to reformat it:
+
+    df.rxs$categorical[[1]][c('scenario', 'Max')] %>% 
+        full_join(df.rxs$categorical[[2]][c("scenario", 'Min')],
+                  by = 'scenario') %>% 
+        rename(maxtmax=Max, mintmin=Min) %>% mutate(model=mod)
+
+Where `df.rxs` is the `data.frame` object we used to store the output of 
+_rxSummary_.
 
 ### Query Performance
 

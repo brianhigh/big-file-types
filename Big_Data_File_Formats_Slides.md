@@ -88,6 +88,56 @@ much smaller and uncompressed CSV much larger.
 
 ![](Big_Data_File_Formats_Slides_files/figure-html/plot_file_size-1.png)<!-- -->
 
+## Benchmark Query: SQL
+
+Our benchmark query is a simple filter/group/summarize operation expressed 
+in SQL as:
+
+    SELECT scenario, 
+           MAX(tasmax) AS maxtmax, 
+           MIN(tasmin) AS mintmin  
+    FROM metdata 
+    WHERE NOT tasmax = 0 AND NOT tasmin = 0 
+    GROUP BY scenario;
+
+Where `maxtmax` is the maximum of the daily maximum temperatures and 
+`mintmin` is the minimum of the daily minimum temperatures.
+
+## Benchmark Query: _dplyr_ and _data.table_
+
+This is equivalent to this _dplyr_ pipeline:
+
+    df %>% filter(tasmax != 0, tasmin != 0) %>% 
+           group_by(scenario) %>% 
+           summarise(maxtmax=max(tasmax, na.rm = TRUE), 
+                     mintmin=min(tasmin, na.rm = TRUE))
+
+Or this _data.table_ operation:
+
+    dt[tasmax != 0 & tasmin != 0, 
+       .(maxtmax=max(tasmax, na.rm = TRUE), 
+         mintmin=min(tasmin, na.rm = TRUE)), 
+       by = list(scenario)]
+
+## Benchmark Query: _rxSummary_
+
+With XDF, we can use the _rxSummary_ function: 
+
+    rxSummary(~tasmax:scenario + tasmin:scenario, 
+              data=xdf.dso, removeZeroCounts = TRUE, 
+              summaryStats=c("Max", "Min"))
+
+But to get the output formatted as in the previous examples, we use _dplyr_ 
+to reformat it:
+
+    df.rxs$categorical[[1]][c('scenario', 'Max')] %>% 
+        full_join(df.rxs$categorical[[2]][c("scenario", 'Min')],
+                  by = 'scenario') %>% 
+        rename(maxtmax=Max, mintmin=Min) %>% mutate(model=mod)
+
+Where `df.rxs` is the `data.frame` object we used to store the output of 
+_rxSummary_.
+
 ## On-Disk Queries
 
 MonetDBLite was much faster than SQL. XDF was fast too, but it's query features 

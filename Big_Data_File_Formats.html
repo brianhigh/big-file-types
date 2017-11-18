@@ -254,7 +254,7 @@ As stored in RAM:       (2*10^9)*(8+8+8+8+8+8)/1024^3 =  90 GB</code></pre>
 <div id="file-comparison-test-results" class="section level2">
 <h2>File Comparison Test Results</h2>
 <p>For this project we were not too concerned about the time it takes to write the files since we would be automating this as a batch and would only need to write the merged files once.</p>
-<p>What was of more concern was the amount of space the files would take, how long it would take to query them “on disk” and how long it would take to read entire files into memory. Once in memory, we were also interested in how long it would take to summarize the data, so we compared <em>dplyr</em> and <em>data.table</em> for this, as we knew from previous experience those packages were good performers and easy to use. </p>
+<p>What was of more concern was the amount of space the files would take, how long it would take to query them “on disk” and how long it would take to read entire files into memory. Once in memory, we were also interested in how long it would take to summarize the data, so we compared <em>dplyr</em> and <em>data.table</em> for this, as we knew from previous experience those packages were good performers and easy to use.</p>
 <div id="file-size" class="section level3">
 <h3>File Size</h3>
 <p>We found the two SQL database formats, SQLite and MonetDBLite to consume similar amounts of space, about the same as RData and almost as much as the CSV format. XDF and GZipped CSV were noticeably smaller, due to compression. We saw the MonetDBLite file size grow appreciably after a few queries had been performed. This is because that file format will reindex itself according to your queries.</p>

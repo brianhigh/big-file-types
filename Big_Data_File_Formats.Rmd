@@ -337,7 +337,6 @@ files into memory. Once in memory, we were also interested in how long it would
 take to summarize the data, so we compared _dplyr_ and _data.table_ for this, as
 we knew from previous experience those packages were good performers and easy 
 to use.
-\pagebreak
 
 ### File Size
 

@@ -3,9 +3,8 @@ title: "Big Data File Formats"
 author: "Brian High and Miriam Calkins"
 date: "November 17, 2017"
 output:
-  html_document: default
-  pdf_document: default
-  word_document: default
+  html_document: 
+    keep_md: yes
 ---
 
 ```{r setup, include=FALSE, echo=FALSE}

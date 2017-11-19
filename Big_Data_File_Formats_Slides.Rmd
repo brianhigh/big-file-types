@@ -51,7 +51,7 @@ We are using climate data from the
 * 2000 NetCDF files consuming 290 gigabytes (GB)
 * would be 3 terabytes (TB) as CSV
 * would be 1.5 TB when loaded into memory (RAM)
-* would take 7 days to load all of the NetCDF files into R
+* would take 7-8 days to load all of the NetCDF files into R
 
 ## File Formats
 

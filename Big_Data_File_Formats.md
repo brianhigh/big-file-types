@@ -66,7 +66,7 @@ for geographic grid locations in Washington State for one climate model.
 We will look at 20 models, so a total of about 40 billion rows of data. If 
 stored as plain text CSV files, this would consume almost 3 terabytes (TB) of 
 disk space. If imported into R, this would use more than 1.5 TB of memory. It 
-would take about 7 days to load the NetCDF files for all 20 models into R.
+would take about 7-8 days to load the NetCDF files for all 20 models into R.
 Fortunately, we only need to work with one model at a time. Even so, we would
 still consider this "Big Data", as we would need at least 180 GB of memory to 
 store one model's data in memory and perform basic statistical operations on 

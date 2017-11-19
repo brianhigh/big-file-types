@@ -140,9 +140,12 @@
 <li>2000 NetCDF files consuming 290 gigabytes (GB)</li>
 <li>would be 3 terabytes (TB) as CSV</li>
 <li>would be 1.5 TB when loaded into memory (RAM)</li>
+<li>would take 7 days to load all of the NetCDF files into R</li>
 </ul>
 
 </article></slide><slide class=''><hgroup><h2>File Formats</h2></hgroup><article  id="file-formats" class="smaller ">
+
+<p>Since it takes over 8 hours to load the 50 NetCDF files for a single model, we wanted to find a faster file format. Can we convert the NetCDF files to a format which takes only a few minutes to load? Can we find one which can be queried without loading the entire file into memory? Will such a file format still have modest storage requirements?</p>
 
 <p>We compared the following file formats and their performance:</p>
 
@@ -156,9 +159,11 @@
 
 </article></slide><slide class=''><hgroup><h2>Packages</h2></hgroup><article  id="packages" class="smaller ">
 
-<p>We will used these R packages:</p>
+<p>We will use these R packages:</p>
 
 <ul>
+<li><a href='https://cran.r-project.org/web/packages/ncdf4/index.html' title=''>ncdf4</a></li>
+<li><a href='https://cran.r-project.org/web/packages/raster/index.html' title=''>raster</a></li>
 <li><a href='https://cran.r-project.org/web/packages/data.table/index.html' title=''>data.table</a></li>
 <li><a href='https://cran.r-project.org/web/packages/dplyr/index.html' title=''>dplyr</a></li>
 <li><a href='https://cran.r-project.org/web/packages/dbplyr/index.html' title=''>dbplyr</a></li>

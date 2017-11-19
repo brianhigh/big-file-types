@@ -157,7 +157,7 @@ $(document).ready(function () {
 <div id="case-study-exploratory-data-analysis-of-meteorological-data" class="section level3">
 <h3>Case Study: Exploratory Data Analysis of Meteorological Data</h3>
 <p>We will be working with an ongoing research project using meteorological data as an example case study. In particular, we will use climate data from the <a href="https://climate.northwestknowledge.net/MACA/">MACA downscaling</a> datasets. Our goal is to find which file types will be the most efficient for working with data from this source, when merged into datasets containing about two billion rows each. This size represents 150 years of daily observations and projects for geographic grid locations in Washington State for one climate model.</p>
-<p>We will look at 20 models, so a total of about 40 billion rows of data. If stored as plain text CSV files, this would consume almost 3 terabytes (TB) of disk space. If imported into R, this would use more than 1.5 TB of memory. Fortunately, we only need to work with one model at a time. Even so, we would still consider this “Big Data”, as we would need at least 180 GB of memory to store one model’s data in memory and perform basic statistical operations on it. Most computer systems, aside from large servers, do not have this much memory.</p>
+<p>We will look at 20 models, so a total of about 40 billion rows of data. If stored as plain text CSV files, this would consume almost 3 terabytes (TB) of disk space. If imported into R, this would use more than 1.5 TB of memory. It would take about 7 days to load the NetCDF files for all 20 models into R. Fortunately, we only need to work with one model at a time. Even so, we would still consider this “Big Data”, as we would need at least 180 GB of memory to store one model’s data in memory and perform basic statistical operations on it. Most computer systems, aside from large servers, do not have this much memory.</p>
 </div>
 </div>
 <div id="big-data" class="section level2">
@@ -253,8 +253,8 @@ As stored in RAM:       (2*10^9)*(8+8+8+8+8+8)/1024^3 =  90 GB</code></pre>
 </div>
 <div id="file-comparison-test-results" class="section level2">
 <h2>File Comparison Test Results</h2>
-<p>For this project we were not too concerned about the time it takes to write the files since we would be automating this as a batch and would only need to write the merged files once.</p>
-<p>What was of more concern was the amount of space the files would take, how long it would take to query them “on disk” and how long it would take to read entire files into memory. Once in memory, we were also interested in how long it would take to summarize the data, so we compared <em>dplyr</em> and <em>data.table</em> for this, as we knew from previous experience those packages were good performers and easy to use.</p>
+<p>Since it takes over 8 hours to load the 50 NetCDF files for a single model, we wanted to find a faster file format. Can we convert the NetCDF files to a format which takes only a few minutes to load? Can we find one which can be queried without loading the entire file into memory? Will such a file format still have modest storage requirements?</p>
+<p>To answer these questions, we evaluated several alternative file formats and compared them by file size, speed of “on-disk” queries (not loading the entire file into memory), speed of loading into memory, and speed of “in-memory” queries (equivalent to the “on-disk” query but executed entirely in memory).</p>
 <div id="file-size" class="section level3">
 <h3>File Size</h3>
 <p>We found the two SQL database formats, SQLite and MonetDBLite to consume similar amounts of space, about the same as RData and almost as much as the CSV format. XDF and GZipped CSV were noticeably smaller, due to compression. We saw the MonetDBLite file size grow appreciably after a few queries had been performed. This is because that file format will reindex itself according to your queries.</p>

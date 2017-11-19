@@ -79,7 +79,8 @@ for geographic grid locations in Washington State for one climate model.
 
 We will look at 20 models, so a total of about 40 billion rows of data. If 
 stored as plain text CSV files, this would consume almost 3 terabytes (TB) of 
-disk space. If imported into R, this would use more than 1.5 TB of memory. 
+disk space. If imported into R, this would use more than 1.5 TB of memory. It 
+would take about 7 days to load the NetCDF files for all 20 models into R.
 Fortunately, we only need to work with one model at a time. Even so, we would
 still consider this "Big Data", as we would need at least 180 GB of memory to 
 store one model's data in memory and perform basic statistical operations on 
@@ -327,16 +328,16 @@ network.
 
 ## File Comparison Test Results
 
-For this project we were not too concerned about the time it takes to write the
-files since we would be automating this as a batch and would only need to write 
-the merged files once.
+Since it takes over 8 hours to load the 50 NetCDF files for a single model, 
+we wanted to find a faster file format. Can we convert the NetCDF files to 
+a format which takes only a few minutes to load? Can we find one which can 
+be queried without loading the entire file into memory? Will such a file format 
+still have modest storage requirements?
 
-What was of more concern was the amount of space the files would take, how long
-it would take to query them "on disk" and how long it would take to read entire 
-files into memory. Once in memory, we were also interested in how long it would 
-take to summarize the data, so we compared _dplyr_ and _data.table_ for this, as
-we knew from previous experience those packages were good performers and easy 
-to use.
+To answer these questions, we evaluated several alternative file formats and 
+compared them by file size, speed of "on-disk" queries (not loading the entire 
+file into memory), speed of loading into memory, and speed of "in-memory" 
+queries (equivalent to the "on-disk" query but executed entirely in memory).
 
 ### File Size
 

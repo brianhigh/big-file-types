@@ -168,7 +168,7 @@ column types as you import, as it will take a long time to convert after import.
 
 ## Max and Min Temperatures
 
-It takes about 3 hours and 12 minutes to summarize all of the data:
+It takes about 3 hours and 12 minutes to summarize all of the data with `rxSummary`:
 
 
 
@@ -190,7 +190,7 @@ we may prefer XDF, but if execution time and memory conservation are priorities,
 then we may prefer MonetDBLite.
 
 It is quicker to import our data into a `data.frame` rather than converting to 
-_data.table_ during or after import. But using the _data.table_ bracket-notation
+a `data.table` during or after import. But using the _data.table_ bracket-notation
 for some operations will be faster than performing those same operations with 
 _dplyr_ functions. So, if we have lots of operations to perform in memory, it 
 may be worth the overhead of converting data frame's to data tables in order 

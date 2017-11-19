@@ -18,7 +18,8 @@ my_repo <- 'http://cran.r-project.org'
 if (!require("pacman")) {install.packages("pacman", repos = my_repo)}
 
 # Load the other packages, installing as needed.
-pacman::p_load(dplyr, stringr, data.table, ncdf4, raster, RSQLite, MonetDBLite, DBI)
+pacman::p_load(stringr, dplyr, data.table, ncdf4, raster, DBI, RSQLite, 
+               MonetDBLite)
 
 # --------------
 # Configuration

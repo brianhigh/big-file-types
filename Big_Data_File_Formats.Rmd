@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r setup, include=FALSE, echo=FALSE}
-knitr::opts_chunk$set(echo = FALSE, cache=TRUE, fig.height=4)
+knitr::opts_chunk$set(echo = FALSE, cache=FALSE, fig.height=4)
 ```
 
 ```{r, warning=FALSE, message=FALSE}
@@ -446,7 +446,7 @@ to long to read to be considered competitive with the others.
 
 ```{r}
 mem_file_type <- c('NetCDF', 'GZip-CSV', 'SQLite', 'MonetDBLite', 'MonetDBLite', 'XDF', 'XDF', 'RData')
-mem_imp_time <- c(454.2, 466.3, 85.8, 14.7, 3.1, 24.5, 29.1, 27.4)
+mem_imp_time <- c(455.8, 466.3, 85.8, 14.7, 3.1, 24.5, 29.1, 27.4)
 mem_imp_type <- c('data.frame', 'data.table', 'data.table', 'data.table', 'data.frame', 'data.frame', 'data.table', 'data.frame')
 mem_imp_size <- c(91.2, 91.2, 91.2, 91.2, 91.2, 83.6, 83.6, 91.2)
 mem_imp_df <- data.frame(file.type=mem_file_type,

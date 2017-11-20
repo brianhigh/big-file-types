@@ -1,0 +1,830 @@
+
+> #!/opt/microsoft/rclient/3.4.1/bin/R/Rscript
+> 
+> # Import/Merge NetCDF data for one model into a data table and save to XDF.
+> # XDF file output requires Microsoft R Client or Machine Learning Server.
+> # Tested with Microsoft R Open 3.4.1, R Client packages, version 3.4.1.008. 
+> # (2017-11-19, Brian High)
+> 
+> # ------
+> # Setup
+> # ------
+> 
+> # Clear the workspace.
+> rm(list=ls())
+
+> # Load pacman into memory, installing as needed.
+> my_repo <- 'http://cran.r-project.org'
+
+> if (!require("pacman")) {install.packages("pacman", repos = my_repo)}
+Loading required package: pacman
+
+> # Load the other packages, installing as needed.
+> pacman::p_load(dplyr, stringr, data.table, raster)
+
+> # --------------
+> # Configuration
+> # --------------
+> 
+> # The path to the input data folder containg the NetCDF files.
+> input.folder <- '//pacific/tip/data/Temp'
+
+> # The path to the output folder, as a subfolder of input folder (above).
+> xdf.output.folder <- file.path(input.folder, 'xdf')
+
+> # Select which variables(s) you want to compile.
+> varnames <- c('tasmax', 'tasmin')
+
+> vars <- varnames[1:2]
+
+> # See "Configure variable types" below if you change this!
+> 
+> # Select which model(s) you want to compile.
+> models <- c('bcc-csm1-1',
++             'bcc-csm1-1-m',
++             'BNU-ESM',
++             'CanESM2',
++             'CCSM4',
++             'CNRM-CM5',
++             'CSIRO-Mk3-6-0',
++             'GFDL-ESM2G',
++             'GFDL-ESM2M',
++             'HadGEM2-CC365',
++             'HadGEM2-ES365',
++             'inmcm4',
++             'IPSL-CM5A-LR',
++             'IPSL-CM5A-MR',
++             'IPSL-CM5B-LR',
++             'MIROC5',
++             'MIROC-ESM',
++             'MIROC-ESM-CHEM',
++             'MRI-CGCM3',
++             'NorESM1-M'
++ )
+
+> # Choose one model only.
+> mod <- models[15]
+
+> # ----------
+> # Functions
+> # ----------
+> 
+> # select_files(): A function to list, parse, and subset input filenames.
+> select_files <- function(input.folder, vars, mods) {
++     # Get a list of files from the input folder matching the "nc" file suffix.
++     files <- list.files(path=input.folder, pattern='*\\.nc')
++     
++     # Parse filenames to create a data table of NetCDF files and their metadata.
++     # Assume filename consists of 9 underscore-delimted fields.
++     files.dt <- files %>% strsplit('_') %>% unlist() %>% t() %>% 
++         matrix(ncol = length(files), nrow = 9) %>% t() %>% 
++         data.table()
++     names(files.dt) <- c('method', 'variable', 'model', 'ensemble', 'scenario', 
++                          'startyr', 'endyr', 'region', 'period')
++     
++     # Subset for only those files which match selected variables and models.
++     myfiles.dt <- files.dt %>% filter(variable %in% vars, model %in% mods)
++     if (! nrow(files.dt) > 0) {
++         stop('Aborting: Variables and models do not match NetCDF files.')
++     }
++     
++     # Reconstruct filenames for files selected for processing.
++     myfiles.dt$filename <- sapply(1:nrow(myfiles.dt), 
++                                   function(x) paste0(myfiles.dt[x,], 
++                                                      collapse='_'))
++     
++     # Clean up "period" column by removing file suffix.
++     myfiles.dt$period <- gsub('\\.nc$', '', myfiles.dt$period)
++     
++     myfiles.dt
++ }
+
+> # nc2dt(): A function to import a NetCDF file into a data.table.
+> nc2dt <- function(infile, varname) {
++     layerlist <- brick(infile)
++     dt <- rbindlist(lapply(1:nlayers(layerlist), function(layernum) { 
++         as.data.frame(layerlist[[layernum]], long=TRUE, xy = TRUE) }), 
++         use.names=TRUE, fill=TRUE)
++     names(dt) <- c('lon', 'lat', 'date', varname)
++     dt$scenario <- gsub('^.*_(historical|rcp[0-9]+)_.*$', '\\1', infile)
++     dt
++ }
+
+> # in2xdf(): A function to export a file or data frame into a XDF file.
+> in2xdf <- function(indata, outfile, col.classes, col.info) {
++     # Configuration
++     my.overwrite = TRUE
++     my.append = 'none'
++     
++     # If the file exists, configure to append to it, otherwise create it.
++     if(file.exists(outfile)) { 
++         my.overwrite = FALSE
++         my.append = 'rows'
++     }
++     
++     # Import data into an XDF file.
++     xdf <- rxImport(inData=indata, outFile=outfile, reportProgress = 1, 
++                     append = my.append, overwrite = my.overwrite, 
++                     colInfo = col.info, colClasses = col.classes,
++                     stringsAsFactors = FALSE, xdfCompressionLevel = 5)
++ }
+
+> # -------------
+> # Main Routine
+> # -------------
+> 
+> # Set working directory to the input data folder.
+> setwd(input.folder)
+
+> # Create the output data folder if it does not already exist.
+> dir.create(xdf.output.folder, showWarnings = FALSE)
+
+> if (! dir.exists(xdf.output.folder)) {
++     stop('Aborting: Cannot create output folders.')
++ }
+
+> # Select filenames to process that match the configured variables and models.
+> files <- data.table(select_files(input.folder, vars, mod))
+
+> # Configure variable types for the XDF file(s).
+> col.classes <- c(lon = 'numeric', lat = 'numeric', date = 'Date', 
++                  scenario = 'factor', tasmax = 'numeric', tasmin = 'numeric')
+
+> col.info <- list(scenario = list(type = 'factor', 
++                                  levels = c('historical', 'rcp45', 'rcp85')))
+
+> # Process files for each model selected in the main configuration section.
+> system.time(sapply(sort(unique(files$model)), function(mod) {
++     # Note: We will assume that none of these output files already exist.
++     xdf.ofn <- file.path(xdf.output.folder, paste0(mod, '.xdf'))
++     
++     # Create a vector of unique scenario and startyr combinations.
++     scenyrs <- unique(files[, paste(scenario, startyr, sep = '_')])
++     
++     # For each scenario/startyr combination, import, merge, and export.
++     sapply(scenyrs, function(scenyr) {
++         ifnames <- files[model == mod & str_detect(filename, scenyr), filename]
++         print(paste("Importing variable(s) from NetCDF file(s):", scenyr))
++         print(system.time(dt <- Reduce(merge, lapply(ifnames, function(ifn) { 
++             nc2dt(ifn, files[filename == ifn, variable])}))))
++         
++         # Create/append output file.
++         print(paste("Appending to XDF file:", scenyr))
++         print(system.time(in2xdf(dt, xdf.ofn, col.classes, col.info)))
++     })
++ }))
+[1] "Importing variable(s) from NetCDF file(s): historical_1950"
+Loading required namespace: ncdf4
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_historical_1950_1954_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_historical_1950_1954_CONUS_daily.nc"
+   user  system elapsed 
+ 477.69   36.13  563.07 
+[1] "Appending to XDF file: historical_1950"
+Rows Processed: 38926668 
+   user  system elapsed 
+   5.21    2.37   85.34 
+[1] "Importing variable(s) from NetCDF file(s): historical_1955"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_historical_1955_1959_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_historical_1955_1959_CONUS_daily.nc"
+   user  system elapsed 
+ 478.66   35.20  565.11 
+[1] "Appending to XDF file: historical_1955"
+Rows Processed: 38926668 
+   user  system elapsed 
+   5.68    2.45   86.77 
+[1] "Importing variable(s) from NetCDF file(s): historical_1960"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_historical_1960_1964_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_historical_1960_1964_CONUS_daily.nc"
+   user  system elapsed 
+ 476.81   33.94  557.86 
+[1] "Appending to XDF file: historical_1960"
+Rows Processed: 38947986 
+   user  system elapsed 
+   4.52    2.48   85.86 
+[1] "Importing variable(s) from NetCDF file(s): historical_1965"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_historical_1965_1969_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_historical_1965_1969_CONUS_daily.nc"
+   user  system elapsed 
+ 480.78   33.90  560.12 
+[1] "Appending to XDF file: historical_1965"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.74    2.51   84.38 
+[1] "Importing variable(s) from NetCDF file(s): historical_1970"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_historical_1970_1974_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_historical_1970_1974_CONUS_daily.nc"
+   user  system elapsed 
+ 480.25   32.73  557.78 
+[1] "Appending to XDF file: historical_1970"
+Rows Processed: 38926668 
+   user  system elapsed 
+   4.07    2.76   86.10 
+[1] "Importing variable(s) from NetCDF file(s): historical_1975"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_historical_1975_1979_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_historical_1975_1979_CONUS_daily.nc"
+   user  system elapsed 
+ 479.63   33.52  558.01 
+[1] "Appending to XDF file: historical_1975"
+Rows Processed: 38926668 
+   user  system elapsed 
+   4.20    2.42   84.53 
+[1] "Importing variable(s) from NetCDF file(s): historical_1980"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_historical_1980_1984_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_historical_1980_1984_CONUS_daily.nc"
+   user  system elapsed 
+ 475.46   32.46  552.82 
+[1] "Appending to XDF file: historical_1980"
+Rows Processed: 38947986 
+   user  system elapsed 
+   4.45    2.22   83.88 
+[1] "Importing variable(s) from NetCDF file(s): historical_1985"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_historical_1985_1989_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_historical_1985_1989_CONUS_daily.nc"
+   user  system elapsed 
+ 478.50   33.04  556.52 
+[1] "Appending to XDF file: historical_1985"
+Rows Processed: 38926668 
+   user  system elapsed 
+   4.08    2.61   84.86 
+[1] "Importing variable(s) from NetCDF file(s): historical_1990"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_historical_1990_1994_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_historical_1990_1994_CONUS_daily.nc"
+   user  system elapsed 
+ 479.42   33.21  557.80 
+[1] "Appending to XDF file: historical_1990"
+Rows Processed: 38926668 
+   user  system elapsed 
+   4.11    2.46   84.65 
+[1] "Importing variable(s) from NetCDF file(s): historical_1995"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_historical_1995_1999_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_historical_1995_1999_CONUS_daily.nc"
+   user  system elapsed 
+ 478.20   33.86  557.69 
+[1] "Appending to XDF file: historical_1995"
+Rows Processed: 38926668 
+   user  system elapsed 
+   4.30    2.81   84.57 
+[1] "Importing variable(s) from NetCDF file(s): historical_2000"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_historical_2000_2004_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_historical_2000_2004_CONUS_daily.nc"
+   user  system elapsed 
+ 484.68   34.71  562.98 
+[1] "Appending to XDF file: historical_2000"
+Rows Processed: 38947986 
+   user  system elapsed 
+   4.29    2.30   83.74 
+[1] "Importing variable(s) from NetCDF file(s): historical_2005"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_historical_2005_2005_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_historical_2005_2005_CONUS_daily.nc"
+   user  system elapsed 
+  84.53    5.95   98.81 
+[1] "Appending to XDF file: historical_2005"
+Rows Processed: 7781070 
+   user  system elapsed 
+   0.97    0.46   17.36 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2006"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2006_2010_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2006_2010_CONUS_daily.nc"
+   user  system elapsed 
+ 479.99   33.06  558.28 
+[1] "Appending to XDF file: rcp45_2006"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.58    2.23   83.05 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2011"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2011_2015_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2011_2015_CONUS_daily.nc"
+   user  system elapsed 
+ 480.95   34.46  559.84 
+[1] "Appending to XDF file: rcp45_2011"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.58    2.29   85.80 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2016"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2016_2020_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2016_2020_CONUS_daily.nc"
+   user  system elapsed 
+ 480.06   34.00  559.25 
+[1] "Appending to XDF file: rcp45_2016"
+Rows Processed: 38947986 
+   user  system elapsed 
+   3.25    2.14   85.05 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2021"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2021_2025_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2021_2025_CONUS_daily.nc"
+   user  system elapsed 
+ 480.36   34.44  559.50 
+[1] "Appending to XDF file: rcp45_2021"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.27    2.50   85.13 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2026"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2026_2030_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2026_2030_CONUS_daily.nc"
+   user  system elapsed 
+ 477.28   33.73  556.55 
+[1] "Appending to XDF file: rcp45_2026"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.54    2.30   85.20 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2031"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2031_2035_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2031_2035_CONUS_daily.nc"
+   user  system elapsed 
+ 480.44   34.04  558.97 
+[1] "Appending to XDF file: rcp45_2031"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.53    2.34   85.43 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2036"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2036_2040_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2036_2040_CONUS_daily.nc"
+   user  system elapsed 
+ 482.67   34.73  561.02 
+[1] "Appending to XDF file: rcp45_2036"
+Rows Processed: 38947986 
+   user  system elapsed 
+   3.23    2.42   83.96 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2041"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2041_2045_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2041_2045_CONUS_daily.nc"
+   user  system elapsed 
+ 485.79   34.12  563.79 
+[1] "Appending to XDF file: rcp45_2041"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.75    2.14   83.22 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2046"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2046_2050_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2046_2050_CONUS_daily.nc"
+   user  system elapsed 
+ 483.71   39.39  566.91 
+[1] "Appending to XDF file: rcp45_2046"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.55    2.11   84.65 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2051"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2051_2055_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2051_2055_CONUS_daily.nc"
+   user  system elapsed 
+ 483.11   34.96  561.73 
+[1] "Appending to XDF file: rcp45_2051"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.78    2.23   85.10 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2056"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2056_2060_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2056_2060_CONUS_daily.nc"
+   user  system elapsed 
+ 487.35   34.60  565.86 
+[1] "Appending to XDF file: rcp45_2056"
+Rows Processed: 38947986 
+   user  system elapsed 
+   3.27    2.45   85.01 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2061"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2061_2065_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2061_2065_CONUS_daily.nc"
+   user  system elapsed 
+ 484.04   33.06  561.93 
+[1] "Appending to XDF file: rcp45_2061"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.65    2.63   85.41 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2066"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2066_2070_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2066_2070_CONUS_daily.nc"
+   user  system elapsed 
+ 483.90   33.52  562.63 
+[1] "Appending to XDF file: rcp45_2066"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.79    2.55   86.33 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2071"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2071_2075_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2071_2075_CONUS_daily.nc"
+   user  system elapsed 
+ 487.66   35.09  566.11 
+[1] "Appending to XDF file: rcp45_2071"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.14    2.43   84.65 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2076"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2076_2080_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2076_2080_CONUS_daily.nc"
+   user  system elapsed 
+ 484.18   34.35  561.32 
+[1] "Appending to XDF file: rcp45_2076"
+Rows Processed: 38947986 
+   user  system elapsed 
+   3.78    2.35   85.53 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2081"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2081_2085_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2081_2085_CONUS_daily.nc"
+   user  system elapsed 
+ 481.75   35.82  562.61 
+[1] "Appending to XDF file: rcp45_2081"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.26    2.16   83.06 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2086"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2086_2090_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2086_2090_CONUS_daily.nc"
+   user  system elapsed 
+ 482.89   34.23  563.42 
+[1] "Appending to XDF file: rcp45_2086"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.38    2.45   84.53 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2091"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2091_2095_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2091_2095_CONUS_daily.nc"
+   user  system elapsed 
+ 480.92   34.63  559.97 
+[1] "Appending to XDF file: rcp45_2091"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.29    2.03   84.30 
+[1] "Importing variable(s) from NetCDF file(s): rcp45_2096"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp45_2096_2099_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp45_2096_2099_CONUS_daily.nc"
+   user  system elapsed 
+ 373.09   27.18  435.32 
+[1] "Appending to XDF file: rcp45_2096"
+Rows Processed: 31145598 
+   user  system elapsed 
+   2.88    2.04   67.80 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2006"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2006_2010_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2006_2010_CONUS_daily.nc"
+   user  system elapsed 
+ 481.20   35.13  560.53 
+[1] "Appending to XDF file: rcp85_2006"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.37    2.76   85.43 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2011"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2011_2015_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2011_2015_CONUS_daily.nc"
+   user  system elapsed 
+ 481.52   35.19  562.48 
+[1] "Appending to XDF file: rcp85_2011"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.60    2.57   84.72 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2016"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2016_2020_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2016_2020_CONUS_daily.nc"
+   user  system elapsed 
+ 481.76   34.04  560.76 
+[1] "Appending to XDF file: rcp85_2016"
+Rows Processed: 38947986 
+   user  system elapsed 
+   3.48    2.34   85.27 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2021"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2021_2025_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2021_2025_CONUS_daily.nc"
+   user  system elapsed 
+ 486.11   34.89  565.78 
+[1] "Appending to XDF file: rcp85_2021"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.93    2.46   86.40 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2026"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2026_2030_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2026_2030_CONUS_daily.nc"
+   user  system elapsed 
+ 486.15   34.74  565.30 
+[1] "Appending to XDF file: rcp85_2026"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.66    2.34   88.05 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2031"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2031_2035_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2031_2035_CONUS_daily.nc"
+   user  system elapsed 
+ 482.34   34.54  561.81 
+[1] "Appending to XDF file: rcp85_2031"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.53    2.48   88.89 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2036"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2036_2040_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2036_2040_CONUS_daily.nc"
+   user  system elapsed 
+ 483.73   32.98  561.61 
+[1] "Appending to XDF file: rcp85_2036"
+Rows Processed: 38947986 
+   user  system elapsed 
+   3.97    2.36   88.89 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2041"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2041_2045_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2041_2045_CONUS_daily.nc"
+   user  system elapsed 
+ 481.21   33.16  558.73 
+[1] "Appending to XDF file: rcp85_2041"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.23    2.45   87.61 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2046"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc"
+   user  system elapsed 
+ 487.25   35.51  567.36 
+[1] "Appending to XDF file: rcp85_2046"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.56    2.42   89.67 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2051"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2051_2055_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2051_2055_CONUS_daily.nc"
+   user  system elapsed 
+ 481.56   34.84  565.36 
+[1] "Appending to XDF file: rcp85_2051"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.07    2.47   92.12 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2056"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2056_2060_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2056_2060_CONUS_daily.nc"
+   user  system elapsed 
+ 482.43   35.07  562.36 
+[1] "Appending to XDF file: rcp85_2056"
+Rows Processed: 38947986 
+   user  system elapsed 
+   3.77    2.58   91.45 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2061"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2061_2065_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2061_2065_CONUS_daily.nc"
+   user  system elapsed 
+ 478.37   35.97  558.54 
+[1] "Appending to XDF file: rcp85_2061"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.48    2.57   89.35 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2066"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2066_2070_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2066_2070_CONUS_daily.nc"
+   user  system elapsed 
+ 482.75   35.63  562.21 
+[1] "Appending to XDF file: rcp85_2066"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.76    2.80   90.55 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2071"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2071_2075_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2071_2075_CONUS_daily.nc"
+   user  system elapsed 
+ 484.15   34.23  563.93 
+[1] "Appending to XDF file: rcp85_2071"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.67    2.11   90.64 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2076"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2076_2080_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2076_2080_CONUS_daily.nc"
+   user  system elapsed 
+ 480.78   34.68  560.03 
+[1] "Appending to XDF file: rcp85_2076"
+Rows Processed: 38947986 
+   user  system elapsed 
+   3.93    2.55   91.29 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2081"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2081_2085_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2081_2085_CONUS_daily.nc"
+   user  system elapsed 
+ 480.86   34.93  560.48 
+[1] "Appending to XDF file: rcp85_2081"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.37    2.35   90.66 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2086"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2086_2090_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2086_2090_CONUS_daily.nc"
+   user  system elapsed 
+ 478.56   35.68  559.27 
+[1] "Appending to XDF file: rcp85_2086"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.34    2.26   85.38 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2091"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2091_2095_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2091_2095_CONUS_daily.nc"
+   user  system elapsed 
+ 482.40   34.43  562.12 
+[1] "Appending to XDF file: rcp85_2091"
+Rows Processed: 38926668 
+   user  system elapsed 
+   3.81    2.58   87.58 
+[1] "Importing variable(s) from NetCDF file(s): rcp85_2096"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmax_IPSL-CM5B-LR_r1i1p1_rcp85_2096_2099_CONUS_daily.nc"
+[1] "vobjtovarid4: error #F: I could not find the requsted var (or dimvar) in the file!"
+[1] "var (or dimvar) name: crs"
+[1] "file name: \\\\pacific\\tip\\data\\Temp\\macav2metdata_tasmin_IPSL-CM5B-LR_r1i1p1_rcp85_2096_2099_CONUS_daily.nc"
+   user  system elapsed 
+ 373.91   26.63  435.92 
+[1] "Appending to XDF file: rcp85_2096"
+Rows Processed: 31145598 
+   user  system elapsed 
+   2.97    1.90   71.41 
+    user   system  elapsed 
+23702.42  1852.82 31661.90 
+Warning message:
+package ‘pacman’ was built under R version 3.4.2 

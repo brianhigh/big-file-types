@@ -42,6 +42,7 @@ still have modest storage requirements?
 
 We compared the following file formats and their performance:
 
+* [NetCDF](https://earthdata.nasa.gov/user-resources/standards-and-references/netcdf-4hdf5-file-format)
 * [RData](https://stat.ethz.ch/R-manual/R-devel/library/base/html/load.html)
 * [CSV](https://en.wikipedia.org/wiki/Comma-separated_values)
 * [SQLite](https://en.wikipedia.org/wiki/SQLite)
@@ -90,7 +91,7 @@ To select the best tools for the job, we considered:
 
 ## File Size
 
-The SQL-based formats were about the size as RData, with XDF and GZipped CSV 
+The SQL-based formats were about the size as RData, with XDF, NetCDF, and GZipped CSV 
 much smaller and uncompressed CSV much larger.
 
 
@@ -158,7 +159,7 @@ are more limited compared to the expressiveness of SQL.
 
 ## File Import Times
 
-MonetDBLite was the fastes to import bay far. SQLite and GZipped CSV took much 
+MonetDBLite was the fastes to import bay far. SQLite, NetCDF, and GZipped CSV took much 
 to long to read to be considered competitive with the others.
 
 

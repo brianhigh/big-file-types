@@ -37,6 +37,7 @@ datasets if you can work with only a subset or sample of the full dataset.
 
 We will compare the following file formats and their performance:
 
+* [NetCDF](https://earthdata.nasa.gov/user-resources/standards-and-references/netcdf-4hdf5-file-format)
 * [RData](https://stat.ethz.ch/R-manual/R-devel/library/base/html/load.html)
 * [CSV](https://en.wikipedia.org/wiki/Comma-separated_values)
 * [SQLite](https://en.wikipedia.org/wiki/SQLite)
@@ -343,15 +344,13 @@ queries (equivalent to the "on-disk" query but executed entirely in memory).
 
 We found the two SQL database formats, SQLite and MonetDBLite to consume similar
 amounts of space, about the same as RData and almost as much as the CSV format. 
-XDF and GZipped CSV were noticeably smaller, due to compression. We saw the 
-MonetDBLite file size grow appreciably after a few queries had been performed. 
-This is because that file format will reindex itself according to your queries.
+XDF, NetCDF, and GZipped CSV were noticeably smaller, due to compression. 
 
 ```{r}
-sz_file_type <- c('CSV', 'GZip-CSV', 'SQLite', 'MonetDBLite', 'XDF', 'RData',  
+sz_file_type <- c('NetCDF', 'CSV', 'GZip-CSV', 'SQLite', 'MonetDBLite', 'XDF', 'RData',  
                   'SQLite', 'MonetDBLite')
-sz_gb <- c(145.5, 26.3, 109.4, 72.5, 11, 95.8, 109.4, 96.4)
-sz_when <- c('Fresh', 'Fresh', 'Fresh','Fresh', 'Fresh', 'Fresh', 'Used', 'Used')
+sz_gb <- c(13.1, 145.5, 26.3, 109.4, 72.5, 11, 95.8, 109.4, 96.4)
+sz_when <- c('Fresh', 'Fresh', 'Fresh', 'Fresh','Fresh', 'Fresh', 'Fresh', 'Used', 'Used')
 file_sz_df <- data.frame(file.type=sz_file_type, 
                          file.size=sz_gb,
                          when=sz_when)
@@ -363,7 +362,7 @@ p <- ggplot(file_sz_df %>% group_by(file.type) %>% summarize(file.size = min(fil
      theme_minimal()
 ```
 
-```{r, plot_file_size}
+```{r, plot_file_size, fig.width=6}
 suppressWarnings(print(p))
 ```
 
@@ -442,14 +441,14 @@ p
 
 ## File Import Times
 
-MonetDBLite was the fastest to import by far. SQLite and GZipped CSV took much 
+MonetDBLite was the fastest to import by far. SQLite, NetCDF, and GZipped CSV took much 
 to long to read to be considered competitive with the others.
 
 ```{r}
-mem_file_type <- c('GZip-CSV', 'SQLite', 'MonetDBLite', 'MonetDBLite', 'XDF', 'XDF', 'RData')
-mem_imp_time <- c(466.3, 85.8, 14.7, 3.1, 24.5, 29.1, 27.4)
-mem_imp_type <- c('data.table', 'data.table', 'data.table', 'data.frame', 'data.frame', 'data.table', 'data.frame')
-mem_imp_size <- c(91.2, 91.2, 91.2, 91.2, 83.6, 83.6, 91.2)
+mem_file_type <- c('NetCDF', 'GZip-CSV', 'SQLite', 'MonetDBLite', 'MonetDBLite', 'XDF', 'XDF', 'RData')
+mem_imp_time <- c(454.2, 466.3, 85.8, 14.7, 3.1, 24.5, 29.1, 27.4)
+mem_imp_type <- c('data.frame', 'data.table', 'data.table', 'data.table', 'data.frame', 'data.frame', 'data.table', 'data.frame')
+mem_imp_size <- c(91.2, 91.2, 91.2, 91.2, 91.2, 83.6, 83.6, 91.2)
 mem_imp_df <- data.frame(file.type=mem_file_type,
                          import.time=mem_imp_time,
                          object.type=mem_imp_type,

@@ -206,7 +206,7 @@ p <- ggplot(on_disk_query_df,
      geom_text(aes(label=query.time), vjust=1.6, color="white", size=4)
 ```
 
-```{r, plot_on_disk_query_time}
+```{r, plot_on_disk_query_time, fig.width=6}
 p
 ```
 

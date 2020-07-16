@@ -159,8 +159,8 @@ are more limited compared to the expressiveness of SQL.
 
 ## File Import Times
 
-MonetDBLite was the fastes to import bay far. SQLite, NetCDF, and GZipped CSV took much 
-to long to read to be considered competitive with the others.
+MonetDBLite was the fastest to import by far. SQLite, NetCDF, and GZipped CSV took much 
+too long to read to be considered competitive with the others.
 
 
 

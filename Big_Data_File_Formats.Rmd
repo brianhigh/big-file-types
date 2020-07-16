@@ -442,7 +442,7 @@ p
 ## File Import Times
 
 MonetDBLite was the fastest to import by far. SQLite, NetCDF, and GZipped CSV took much 
-to long to read to be considered competitive with the others.
+too long to read to be considered competitive with the others.
 
 ```{r}
 mem_file_type <- c('NetCDF', 'GZip-CSV', 'SQLite', 'MonetDBLite', 'MonetDBLite', 'XDF', 'XDF', 'RData')
